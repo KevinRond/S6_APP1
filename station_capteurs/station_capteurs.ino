@@ -32,6 +32,17 @@ static void updateSensorData();
 
 SensorData data;
 
+bool deviceConnected = false;
+
+class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      deviceConnected = true;
+    };
+
+    void onDisconnect(BLEServer* pServer) {
+      deviceConnected = false;
+    }
+};
 
 void setup() {
   // put your setup code here, to run once:
@@ -44,6 +55,28 @@ void setup() {
   }
 
   Serial.println("Capteur DPS310 détecté.");
+
+  BLEDevice::init("Mark I");
+
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+
+  pTxCharacteristic = pService->createCharacteristic(
+    CHARACTERISTIC_UUID_TX,
+    BLECharacteristic::PROPERTY_NOTIFY
+  );
+  pTxCharacteristic->addDescriptor(new BLE2902());
+
+  BLECharacteristic * pRxCharacteristic = pService->createCharacteristic(
+    CHARACTERISTIC_UUID_RX,
+    BLECharacteristic::PROPERTY_WRITE
+  );
+  pRxCharacteristic->setCallbacks(new MyCallbacks());
+
+  pService->start();
+  pServer->getAdvertising()->addServiceUUID(pService->getUUID());
+  pServer->getAdvertising()->start();
 }
 
 static PressureSensorData getPressureSensorData() {
@@ -298,4 +331,9 @@ void loop() {
   
   updateSensorData();
 
+  if (deviceConnected and newDataFlag) {
+    pTxCharacteristic->setValue(displayString);
+    pTxCharacteristic->notify();
+    newDataFlag = false;
+  }
 }
