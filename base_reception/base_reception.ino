@@ -1,8 +1,8 @@
 #include "BLEDevice.h"
 
-#define SERVICE_UUID "6751b742-f992-11ed-be56-0242ac120002"
-#define CHARACTERISTIC_UUID_RX "6751b743-f992-11ed-be56-0242ac120002"
-#define CHARACTERISTIC_UUID_TX "6751b744-f992-11ed-be56-0242ac120002"
+#define SERVICE_UUID "6751b732-f992-11ed-be56-0242ac120002"
+#define CHARACTERISTIC_UUID_RX "6751b733-f992-11ed-be56-0242ac120002"
+#define CHARACTERISTIC_UUID_TX "6751b734-f992-11ed-be56-0242ac120002"
 
 static BLEAdvertisedDevice* myDevice;
 static bool doConnect = false;
@@ -28,7 +28,7 @@ class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
     Serial.print("Périphérique trouvé: ");
     Serial.println(advertisedDevice.toString().c_str());
 
-    if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(SERVICE_UUID)) {
+    if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(BLEUUID(SERVICE_UUID))) {
       BLEDevice::getScan()->stop();
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
       doConnect = true;
@@ -54,7 +54,7 @@ bool connectToServer() {
   pClient->connect(myDevice);
   Serial.println("Connecté!");
 
-  BLERemoteService* pRemoteService = pClient->getService(SERVICE_UUID);
+  BLERemoteService* pRemoteService = pClient->getService(BLEUUID(SERVICE_UUID));
   if (pRemoteService == nullptr) {
     Serial.println("Service non trouvé");
     pClient->disconnect();
@@ -62,7 +62,7 @@ bool connectToServer() {
   }
 
   // Obtenir TX
-  pRemoteCharacteristicTX = pRemoteService->getCharacteristic(CHARACTERISTIC_UUID_TX);
+  pRemoteCharacteristicTX = pRemoteService->getCharacteristic(BLEUUID(CHARACTERISTIC_UUID_TX));
   if (pRemoteCharacteristicTX == nullptr) {
     Serial.println("Caractéristique TX non trouvée");
     pClient->disconnect();
@@ -70,7 +70,7 @@ bool connectToServer() {
   }
 
   // Obtenir RX
-  pRemoteCharacteristicRX = pRemoteService->getCharacteristic(CHARACTERISTIC_UUID_RX);
+  pRemoteCharacteristicRX = pRemoteService->getCharacteristic(BLEUUID(CHARACTERISTIC_UUID_RX));
   if (pRemoteCharacteristicRX == nullptr) {
     Serial.println("Caractéristique RX non trouvée");
     pClient->disconnect();
