@@ -1,16 +1,23 @@
 #include <Adafruit_DPS310.h>
 #include <Wire.h>
 #include "SparkFun_Weather_Meter_Kit_Arduino_Library.h"
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
 
-Adafruit_DPS310 dps;
+#define SERVICE_UUID           "14fa21aa-4c85-4ff8-972e-463fcfdc4f33"
+#define CHARACTERISTIC_UUID_RX "14fa21aa-4c85-4ff8-972e-463fcfdc4f33"
+#define CHARACTERISTIC_UUID_TX "14fa21aa-4c85-4ff8-972e-463fcfdc4f33"
+#define PIN_TX 2
+#define PIN_RX 15
+#define PIN_RAINFALL 19
+#define PIN_WIND_SPEED 27
+#define PIN_WIND_DIRECTION 35
 
-int windSpeedPin = 27;
-int windDirectionPin = 35;
-int rainfallPin = 19;
-int pin_TX = 2;
-int pin_RX = 15;
-
-SFEWeatherMeterKit weatherMeterKit(windDirectionPin, windSpeedPin, rainfallPin);
+/***************************************************************************************
+Struct definitions
+***************************************************************************************/
 
 struct HumiditySensorData {
   float humidity;
@@ -33,20 +40,66 @@ struct SensorData {
   float rainfallRate = 0.0;
 };
 
+/***************************************************************************************
+Function declarations
+***************************************************************************************/ 
+
 static float getLight();
 static HumiditySensorData getHumiditySensorData();
 static PressureSensorData getPressureSensorData();
 static const char* getWindDirection();
 static float getWindSpeed();
-static void updateSensorData();
+static bool updateSensorData();
 
+/***************************************************************************************
+Global Variables
+***************************************************************************************/ 
 
+Adafruit_DPS310 dps;
+SFEWeatherMeterKit weatherMeterKit(PIN_WIND_DIRECTION, PIN_WIND_SPEED, PIN_RAINFALL);
+BLEServer *pServer = NULL;
+BLECharacteristic * pTxCharacteristic;
+bool deviceConnected = false;
+bool oldDeviceConnected = false;
+uint8_t txValue = 0;
 SensorData data;
 
+/***************************************************************************************
+Class definitions
+***************************************************************************************/ 
+
+class MyServerCallbacks: public BLEServerCallbacks {
+    void onConnect(BLEServer* pServer) {
+      deviceConnected = true;
+    };
+
+    void onDisconnect(BLEServer* pServer) {
+      deviceConnected = false;
+    }
+};
+
+class MyCallbacks: public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic *pCharacteristic) {
+      String rxValue = pCharacteristic->getValue();
+
+      if (rxValue.length() > 0) {
+        Serial.print("Received Value: ");
+        for (int i = 0; i < rxValue.length(); i++)
+          Serial.print(rxValue[i]);
+
+        Serial.println();
+      }
+    }
+};
+
+/***************************************************************************************
+Function Definitions
+***************************************************************************************/ 
 
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
+  Serial2.begin(115200, SERIAL_8N1, PIN_RX, PIN_TX);
   while (!Serial);  // Attend que le port série soit prêt (utile sur certains PC)
 
   if (!dps.begin_I2C()) {
@@ -69,6 +122,38 @@ void setup() {
 
   // Begin weather meter kit
   weatherMeterKit.begin();
+  // Create the BLE Device
+  BLEDevice::init("Station de Capteurs");
+
+  // Create the BLE Server
+  pServer = BLEDevice::createServer();
+  pServer->setCallbacks(new MyServerCallbacks());
+
+  // Create the BLE Service
+  BLEService *pService = pServer->createService(SERVICE_UUID);
+
+  // Create a BLE Characteristic
+  pTxCharacteristic = pService->createCharacteristic(
+                    CHARACTERISTIC_UUID_TX,
+                    BLECharacteristic::PROPERTY_NOTIFY
+                  );
+                      
+  pTxCharacteristic->addDescriptor(new BLE2902());
+  
+  BLECharacteristic * pRxCharacteristic = pService->createCharacteristic(
+                       CHARACTERISTIC_UUID_RX,
+                      BLECharacteristic::PROPERTY_WRITE
+                    );  
+
+  pRxCharacteristic->setCallbacks(new MyCallbacks());
+
+  // Start the service
+  pService->start();
+
+  // Start advertising
+  pServer->getAdvertising()->addServiceUUID(pService->getUUID());
+  pServer->getAdvertising()->start();
+  
 }
 
 static PressureSensorData getPressureSensorData() {
@@ -133,7 +218,6 @@ static HumiditySensorData getHumiditySensorData() {
   result.humidity = data[0] + (data[1] / 256.0);
   result.temperature = data [2] + (data[3] / 256.0);
   return result;
-  
 }
 
 static const char* getWindDirection() {
@@ -162,8 +246,7 @@ static float getRainfall() {
   return weatherMeterKit.getTotalRainfall();
 }
 
-static void updateSensorData() {
-  // Only read sensors when needed (track last update times)
+static bool updateSensorData() {
   static unsigned long lastLightUpdate = 0;
   static unsigned long lastHumidityUpdate = 0;
   static unsigned long lastPressureUpdate = 0;
@@ -251,7 +334,9 @@ static void updateSensorData() {
 
   if (updatedValues) {
     displaySensorData();
+    return true;
   }
+  return false;
 }
 
 void displaySensorData() {
@@ -285,6 +370,59 @@ void displaySensorData() {
   Serial.println(F("======================"));
 }
 
+void envoyerUART() {
+  Serial2.println(F("\n====== Sensor Data ======"));
+  
+  Serial2.print(F("Light: "));
+  Serial2.print(data.light);
+  Serial2.println(F("%"));
+
+  Serial2.print(F("Humidity: "));
+  Serial2.print(data.humidity);
+  Serial2.println(F("%"));
+
+  Serial2.print(F("Pressure: "));
+  Serial2.print(data.pressure);
+  Serial2.println(F(" Pa"));
+
+  Serial2.print(F("Temperature: "));
+  Serial2.print(data.temperature);
+  Serial2.println(F(" °C"));
+
+  Serial2.print(F("Wind: "));
+  Serial2.print(data.windSpeed);
+  Serial2.print(F(" km/h from "));
+  Serial2.println(data.windDirection);
+
+  Serial2.print(F("Rainfall: "));
+  Serial2.print(data.rainfall, 2);
+  Serial2.println(F(" mm/h"));
+
+  Serial2.println(F("======================"));
+}
+
 void loop() {
-  updateSensorData();
+  bool isDataUpdated = false;
+  isDataUpdated = updateSensorData();
+  if (deviceConnected && isDataUpdated) {
+        pTxCharacteristic->setValue("Nouvelle valeur à la station météo");
+        pTxCharacteristic->notify();
+        envoyerUART();
+        isDataUpdated = false;
+      delay(10); // bluetooth stack will go into congestion, if too many packets are sent
+  }
+
+    // disconnecting
+  if (!deviceConnected && oldDeviceConnected) {
+        delay(500); // give the bluetooth stack the chance to get things ready
+        pServer->startAdvertising(); // restart advertising
+        Serial.println("start advertising");
+        oldDeviceConnected = deviceConnected;
+    }
+    // connecting
+  if (deviceConnected && !oldDeviceConnected) {
+        oldDeviceConnected = deviceConnected;
+    }
+
+  delay(100);
 }
