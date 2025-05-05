@@ -76,19 +76,11 @@ class MyServerCallbacks: public BLEServerCallbacks {
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
-  while (!Serial);  // Attend que le port série soit prêt (utile sur certains PC)
-
-  if (!dps.begin_I2C()) {
-    Serial.println("Erreur : capteur DPS310 non détecté !");
-    while (1); // Boucle infinie si le capteur n'est pas trouvé
-  }
-
-  Serial.println("Capteur DPS310 détecté.");
-
   BLEDevice::init("Mark I");
 
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new MyServerCallbacks());
+
   BLEService *pService = pServer->createService(SERVICE_UUID);
 
   pTxCharacteristic = pService->createCharacteristic(
@@ -106,6 +98,15 @@ void setup() {
   pService->start();
   pServer->getAdvertising()->addServiceUUID(pService->getUUID());
   pServer->getAdvertising()->start();
+
+  //while (!Serial);  // Attend que le port série soit prêt (utile sur certains PC)
+
+  //if (!dps.begin_I2C()) {
+  //  Serial.println("Erreur : capteur DPS310 non détecté !");
+  //  while (1); // Boucle infinie si le capteur n'est pas trouvé
+  //}
+
+  //Serial.println("Capteur DPS310 détecté.");
 }
 
 static PressureSensorData getPressureSensorData() {
