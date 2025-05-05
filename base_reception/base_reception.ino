@@ -1,31 +1,44 @@
 #include "BLEDevice.h"
 
-static BLEUUID serviceUUID("6751b732-f992-11ed-be56-0242ac120002");
-static BLEUUID charUUID("6751b734-f992-11ed-be56-0242ac120002");
+#define SERVICE_UUID "6751b742-f992-11ed-be56-0242ac120002"
+#define CHARACTERISTIC_UUID_RX "6751b743-f992-11ed-be56-0242ac120002"
+#define CHARACTERISTIC_UUID_TX "6751b744-f992-11ed-be56-0242ac120002"
 
 static BLEAdvertisedDevice* myDevice;
 static bool doConnect = false;
 static bool doScan = false;
-static BLERemoteCharacteristic* pRemoteCharacteristic;
 static bool connected = false;
 
+static BLERemoteCharacteristic* pRemoteCharacteristicTX = nullptr;
+static BLERemoteCharacteristic* pRemoteCharacteristicRX = nullptr;
 
-class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
+// --- Callback de notification depuis la TX ---
+void notifyCallback(
+  BLERemoteCharacteristic* pBLERemoteCharacteristic,
+  uint8_t* pData,
+  size_t length,
+  bool isNotify) {
+  Serial.print("Notification reçue: ");
+  Serial.write(pData, length);
+  Serial.println();
+}
+
+class MyAdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
   void onResult(BLEAdvertisedDevice advertisedDevice) {
     Serial.print("Périphérique trouvé: ");
     Serial.println(advertisedDevice.toString().c_str());
 
-    if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(serviceUUID)) {
+    if (advertisedDevice.haveServiceUUID() && advertisedDevice.isAdvertisingService(SERVICE_UUID)) {
       BLEDevice::getScan()->stop();
       myDevice = new BLEAdvertisedDevice(advertisedDevice);
       doConnect = true;
-      doScan = true;
+      doScan = false;
     }
   }
 };
 
 class MyClientCallback : public BLEClientCallbacks {
-  void onConnect(BLEClient* pclient) { }
+  void onConnect(BLEClient* pclient) {}
 
   void onDisconnect(BLEClient* pclient) {
     connected = false;
@@ -41,44 +54,37 @@ bool connectToServer() {
   pClient->connect(myDevice);
   Serial.println("Connecté!");
 
-  BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
+  BLERemoteService* pRemoteService = pClient->getService(SERVICE_UUID);
   if (pRemoteService == nullptr) {
     Serial.println("Service non trouvé");
     pClient->disconnect();
     return false;
   }
 
-  pRemoteCharacteristic = pRemoteService->getCharacteristic(charUUID);
-  if (pRemoteCharacteristic == nullptr) {
-    Serial.println("Caractéristique non trouvée");
+  // Obtenir TX
+  pRemoteCharacteristicTX = pRemoteService->getCharacteristic(CHARACTERISTIC_UUID_TX);
+  if (pRemoteCharacteristicTX == nullptr) {
+    Serial.println("Caractéristique TX non trouvée");
     pClient->disconnect();
     return false;
   }
 
-  if (pRemoteCharacteristic->canRead()) {
-    std::string value = pRemoteCharacteristic->readValue();
-    Serial.print("Valeur lue : ");
-    Serial.println(value.c_str());
+  // Obtenir RX
+  pRemoteCharacteristicRX = pRemoteService->getCharacteristic(CHARACTERISTIC_UUID_RX);
+  if (pRemoteCharacteristicRX == nullptr) {
+    Serial.println("Caractéristique RX non trouvée");
+    pClient->disconnect();
+    return false;
   }
 
-  if (pRemoteCharacteristic->canNotify()) {
-    pRemoteCharacteristic->registerForNotify(notifyCallback);
+  // Enregistrement des notifications sur TX
+  if (pRemoteCharacteristicTX->canNotify()) {
+    pRemoteCharacteristicTX->registerForNotify(notifyCallback);
   }
 
   connected = true;
   return true;
 }
-
-void notifyCallback(
-  BLERemoteCharacteristic* pBLERemoteCharacteristic,
-  uint8_t* pData,
-  size_t length,
-  bool isNotify) {
-  Serial.print("Notification reçue: ");
-  Serial.write(pData, length);
-  Serial.println();
-}
-
 
 void setup() {
   Serial.begin(115200);
@@ -103,13 +109,13 @@ void loop() {
     doConnect = false;
   }
 
-  if (connected) {
-    String newValue = "Time: " + String(millis()/1000);
-    pRemoteCharacteristic->writeValue(newValue.c_str(), newValue.length());
+  if (connected && pRemoteCharacteristicRX != nullptr) {
+    String newValue = "Time: " + String(millis() / 1000);
+    pRemoteCharacteristicRX->writeValue(newValue.c_str(), newValue.length());
     Serial.println("Donnée envoyée: " + newValue);
   }
   else if (doScan) {
-    BLEDevice::getScan()->start(0);  // recommence le scan sans durée limite
+    BLEDevice::getScan()->start(0);  // Recommence le scan sans durée limite
   }
 
   delay(1000);

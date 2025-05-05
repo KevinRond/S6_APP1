@@ -1,6 +1,10 @@
 #include <Adafruit_DPS310.h>
 #include <Wire.h>
 
+#define SERVICE_UUID "6751b742-f992-11ed-be56-0242ac120002"
+#define CHARACTERISTIC_UUID_RX "6751b743-f992-11ed-be56-0242ac120002"
+#define CHARACTERISTIC_UUID_TX "6751b744-f992-11ed-be56-0242ac120002"
+
 Adafruit_DPS310 dps;
 
 struct HumiditySensorData {
@@ -302,6 +306,20 @@ void displaySensorData() {
   Serial.println(data.windDirection);
 
   Serial.println(F("======================"));
+}
+
+static void water_level() {
+  static long timer = millis();
+  if (millis() - timer > 250)
+  {
+    int val = digitalRead(23);
+    if (val == 0)
+    {
+      newDataFlag = true;
+      sensors.waterLevel += 0.2794f;
+      timer = millis();
+    }
+  }
 }
 
 void loop() {
