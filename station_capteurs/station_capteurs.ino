@@ -46,7 +46,7 @@ BLEServer* pServer = nullptr;
 BLECharacteristic* pTxCharacteristic = nullptr;
 
 bool newDataFlag = false;
-String displayString = ""; // À définir avec le format souhaité
+static String displayString;
 
 // Déclarez cette structure si elle n'existe pas encore
 struct ExtendedSensorData {
@@ -107,6 +107,20 @@ void setup() {
   //}
 
   //Serial.println("Capteur DPS310 détecté.");
+}
+
+static inline void display()
+{
+  sprintf(displayTable,"\n==============================\n"
+                "Pression = %5.2fkPa\n"
+                "Temperature = %4.2f degreC\n"
+                "Vitesse = %2.2f\n"
+                "Humidite = %2.1f %%\n"
+                "Lumiere = %4.0f\n"
+                "Direction = %s\n"
+                "Niveau d'eau = %2.4f mm\n",
+                sensors.pressure / 1000.f, sensors.temperature, sensors.windSpeed, sensors.humidity, sensors.light, sensors.windDirection, sensors.waterLevel);
+                displayString = displayTable;
 }
 
 static PressureSensorData getPressureSensorData() {
