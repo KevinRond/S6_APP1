@@ -1,7 +1,16 @@
 #include <Adafruit_DPS310.h>
 #include <Wire.h>
+#include "SparkFun_Weather_Meter_Kit_Arduino_Library.h"
 
 Adafruit_DPS310 dps;
+
+int windSpeedPin = 27;
+int windDirectionPin = 35;
+int rainfallPin = 19;
+int pin_TX = 2;
+int pin_RX = 15;
+
+SFEWeatherMeterKit weatherMeterKit(windDirectionPin, windSpeedPin, rainfallPin);
 
 struct HumiditySensorData {
   float humidity;
@@ -20,6 +29,8 @@ struct SensorData {
   float temperature = 0.0;
   const char* windDirection = "N";
   float windSpeed = 0.0;
+  float rainfall = 0.0;
+  float rainfallRate = 0.0;
 };
 
 static float getLight();
@@ -44,6 +55,20 @@ void setup() {
   }
 
   Serial.println("Capteur DPS310 détecté.");
+
+  #ifdef SFE_WMK_PLAFTORM_UNKNOWN
+    // The platform you're using hasn't been added to the library, so the
+    // expected ADC values have been calculated assuming a 10k pullup resistor
+    // and a perfectly linear 16-bit ADC. Your ADC likely has a different
+    // resolution, so you'll need to specify it here:
+    weatherMeterKit.setADCResolutionBits(10);
+    
+    Serial.println(F("Unknown platform! Please edit the code with your ADC resolution!"));
+    Serial.println();
+  #endif
+
+  // Begin weather meter kit
+  weatherMeterKit.begin();
 }
 
 static PressureSensorData getPressureSensorData() {
@@ -51,8 +76,6 @@ static PressureSensorData getPressureSensorData() {
 
   // Lire température et pression
   dps.getEvents(&tempEvent, &pressureEvent);
-
-  delay(1000);
 
   PressureSensorData result;
   result.pressure = pressureEvent.pressure * 100; // hPa → Pa
@@ -62,7 +85,6 @@ static PressureSensorData getPressureSensorData() {
 
 static float getLight() {
   float val = analogRead(34);
-  delay(1000);
   return map(val, 0, 4096*(3.3/5), 0, 100);
 }
 
@@ -72,8 +94,6 @@ static HumiditySensorData getHumiditySensorData() {
   unsigned long pulse;
   byte data[5];
   int broche = 16;
-
-  delay(2000);
   
   pinMode(broche, OUTPUT_OPEN_DRAIN);
   digitalWrite(broche, HIGH);
@@ -123,8 +143,6 @@ static const char* getWindDirection() {
 
 
   float val = analogRead(35) / 4096.0 * 3.3f;
-  // Serial.printf("Raw analog: %d, Normalized: %.2f\n", analogRead(35), val);
-  delay(1000);
 
   for (int i = 0; i < sizeof(directions) / sizeof(char*); i++)
   {
@@ -137,44 +155,11 @@ static const char* getWindDirection() {
 }
 
 static float getWindSpeed() {
-  static bool oldClick = false;
-  static unsigned long start = millis();
-  static unsigned long lastActiveTime = millis();
-  static int clicks = 0;
+  return weatherMeterKit.getWindSpeed();
+}
 
-  float val = analogRead(27); // Read wind sensor
-
-  // Edge detection (same as before)
-  if (oldClick && val == 0) {
-    clicks++;
-    oldClick = false;
-    lastActiveTime = millis();
-  } 
-  else if (!oldClick && val > 0) {
-    oldClick = true;
-    lastActiveTime = millis();
-  }
-
-  // Calculate speed in km/h (calibrated to your sensor)
-  unsigned long elapsed = millis() - start;
-  if (elapsed > 0) {
-    float clicksPerSecond = clicks / (elapsed / 1000.0f); // Convert ms → seconds
-    float windSpeed = clicksPerSecond * 2.4f; // Your calibration factor
-    return windSpeed;
-  }
-
-  // Auto-reset if no wind for 3 seconds
-  if (millis() - lastActiveTime > 3000) {
-    return 0.0f;
-  }
-
-  // Periodic reset (every 30 seconds to prevent overflow)
-  if (elapsed > 30000) {
-    start = millis();
-    clicks = 0;
-  }
-
-  return 0.0f;
+static float getRainfall() {
+  return weatherMeterKit.getTotalRainfall();
 }
 
 static void updateSensorData() {
@@ -183,10 +168,35 @@ static void updateSensorData() {
   static unsigned long lastHumidityUpdate = 0;
   static unsigned long lastPressureUpdate = 0;
   static unsigned long lastWindUpdate = 0;
+  static unsigned long lastRainUpdate = 0;
+  static unsigned long lastRainfallReset = millis();
+  static float lastRainfall = 0;
   bool updatedValues = false;
 
-  // Update light every 2 seconds (example interval)
-  if (millis() - lastLightUpdate >= 2000) {
+  // Update rainfall every second
+  if (millis() - lastRainUpdate >= 1000) {
+    float currentRainfall = getRainfall();
+    
+    // Update total rainfall
+    if (data.rainfall != currentRainfall) {
+      data.rainfall = currentRainfall;
+      updatedValues = true;
+    }
+    
+    data.rainfallRate = (currentRainfall - lastRainfall) * 3600.0; // mm/h
+    lastRainfall = currentRainfall;
+    lastRainUpdate = millis();
+    updatedValues = true;
+  }
+
+  // Reset rainfall counter every 24 hours (optional)
+  if (millis() - lastRainfallReset > 86400000) { // 24h in ms
+    weatherMeterKit.resetTotalRainfall();
+    lastRainfallReset = millis();
+  }
+
+  // Update every 1 sec
+  if (millis() - lastLightUpdate >= 1000) {
     float newLight = getLight();
     if (data.light != newLight) {
       data.light = newLight;
@@ -245,7 +255,7 @@ static void updateSensorData() {
 }
 
 void displaySensorData() {
-  Serial.println(F("\n====== Sensor Data ======"));  // F() stores string in PROGMEM to save RAM
+  Serial.println(F("\n====== Sensor Data ======"));
   
   Serial.print(F("Light: "));
   Serial.print(data.light);
@@ -268,34 +278,13 @@ void displaySensorData() {
   Serial.print(F(" km/h from "));
   Serial.println(data.windDirection);
 
+  Serial.print(F("Rainfall: "));
+  Serial.print(data.rainfall, 2);
+  Serial.println(F(" mm/h"));
+
   Serial.println(F("======================"));
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  // HumiditySensorData humiditySensorData = getHumiditySensorData();
-  // float humidity = humiditySensorData.humidity;
-  // float temperature = humiditySensorData.temperature;
-  // Serial.printf(" humidity = %4.0f \%%  Temperature = %4.2f degreC \n", humidity, temperature);
-
-
-  // PressureSensorData data = getPressureSensorData();
-  // Serial.print("Température : ");
-  // Serial.print(data.temperature);
-  // Serial.println(" °C");
-
-  // Serial.print("Pression : ");
-  // Serial.print(data.pressure );  // hPa → Pa
-  // Serial.println(" Pa");
-
-  // const float windSpeed = getWindSpeed();
-  // Serial.print("windSpeed: ");
-  // Serial.println(windSpeed);
-
-  // const float windSpeed = getWindSpeed();
-  // Serial.print("windSpeed: ");
-  // Serial.println(windSpeed);
-  
   updateSensorData();
-
 }
