@@ -89,7 +89,7 @@ bool connectToServer() {
 void setup() {
   Serial.begin(115200);
   Serial.println("Starting Arduino BLE Client application...");
-  BLEDevice::init("");
+  BLEDevice::init("Mark 2");
 
   BLEScan* pBLEScan = BLEDevice::getScan();
   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks());

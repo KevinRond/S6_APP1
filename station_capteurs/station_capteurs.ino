@@ -1,5 +1,9 @@
 #include <Adafruit_DPS310.h>
 #include <Wire.h>
+#include <BLEDevice.h>
+#include <BLEUtils.h>
+#include <BLEServer.h>
+#include <BLE2902.h>
 
 #define SERVICE_UUID "6751b732-f992-11ed-be56-0242ac120002"
 #define CHARACTERISTIC_UUID_RX "6751b733-f992-11ed-be56-0242ac120002"
@@ -37,6 +41,27 @@ static void updateSensorData();
 SensorData data;
 
 bool deviceConnected = false;
+
+BLEServer* pServer = nullptr;
+BLECharacteristic* pTxCharacteristic = nullptr;
+
+bool newDataFlag = false;
+String displayString = ""; // À définir avec le format souhaité
+
+// Déclarez cette structure si elle n'existe pas encore
+struct ExtendedSensorData {
+  float waterLevel = 0.0f;
+  // Ajouter d'autres champs si nécessaire
+};
+ExtendedSensorData sensors;
+
+class MyCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pCharacteristic) override {
+    std::string value = std::string(pCharacteristic->getValue().c_str());
+    Serial.print("Received via BLE: ");
+    Serial.println(value.c_str());
+  }
+};
 
 class MyServerCallbacks: public BLEServerCallbacks {
     void onConnect(BLEServer* pServer) {
@@ -100,7 +125,7 @@ static PressureSensorData getPressureSensorData() {
 static float getLight() {
   float val = analogRead(34);
   delay(1000);
-  return map(val, 0, 4096*(3.3/5), 0, 100);
+  return map((int)val, 0, (int)(4096 * (3.3 / 5.0)), 0, 100);
 }
 
 static HumiditySensorData getHumiditySensorData() {
