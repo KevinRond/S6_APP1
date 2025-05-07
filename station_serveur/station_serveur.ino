@@ -1,5 +1,3 @@
-@@ -1,169 +0,0 @@
-@@ -0,0 +1,167 @@
 #include "BLEDevice.h"
 
 #define PIN_RX 2
@@ -167,4 +165,3 @@ void loop() {
   
   delay(1000); // Delay a second between loops.
 } // End of loop
-No newline at end of file
